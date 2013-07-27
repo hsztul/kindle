@@ -4,21 +4,21 @@ require 'mechanize'
 module Kindle
 
   class Highlight
-    attr_reader :highlight, :asin
-    def initialize(highlight, asin)
-      @highlight, @asin = highlight, asin
+    attr_reader :highlight, :asin, :book_title, :location
+    def initialize(highlight, asin, book_title, location)
+      @highlight, @asin, @book_title, @location = highlight, asin, book_title, location
     end
   end
 
   class Kindle
     include Nokogiri
-    
+
     KINDLE_URL = 'http://kindle.amazon.com'
 
     attr_reader :agent, :current_page, :asins, :highlights
 
     def initialize(options = {:login => nil, :password => nil})
-      @highlights = [] 
+      @highlights = []
       @current_offset = 25
       @current_highlights = 1
       @current_upcoming = []
@@ -54,8 +54,8 @@ module Kindle
     def extract_highlights(page)
       @current_highlights = hls = (page/".yourHighlight")
       asins = (page/".asin").collect{|asin| asin.text}
-      if hls.length > 0 
-        @current_upcoming = (page/".upcoming").first.text.split(',') rescue [] 
+      if hls.length > 0
+        @current_upcoming = (page/".upcoming").first.text.split(',') rescue []
         @current_offset = ((current_page/".yourHighlightsHeader").collect{|h| h.attributes['id'].value }).first.split('_').last
         (page/".yourHighlight").each do |hl|
           highlight = parse_highlight(hl)
@@ -70,7 +70,7 @@ module Kindle
     def next_highlights
       asins_string = @asins.map{|l| "used_asins[]=#{l}" } * '&'
       upcoming_string = @current_upcoming.map{|l| "upcoming_asins[]=#{l}" } * '&'
-      current_offset = @current_offset 
+      current_offset = @current_offset
       url = "https://kindle.amazon.com/your_highlights/next_book?#{asins_string}&current_offset=#{@current_offset}&#{upcoming_string}"
       ajax_headers = { 'X-Requested-With' => 'XMLHttpRequest', 'Host' => 'kindle.amazon.com' }
       @current_page = @agent.get(url,[],'https://kindle.amazon.com/your_highlight', ajax_headers)
@@ -80,8 +80,15 @@ module Kindle
 
     def parse_highlight(hl)
       highlight = (hl/".highlight").text
-      asin      = (hl/".asin").text
-      Highlight.new(highlight, asin)
+      asin = (hl/".asin").text
+      location = extract_location(hl)
+      book_title = (@current_page/"##{asin}_#{@current_offset} .title").text
+      Highlight.new(highlight, asin, book_title, location)
+    end
+
+    def extract_location(hl)
+      href = (hl/".k4pcReadMore").attr('href').value
+      location = href.split('location=').last
     end
 
     def get_kindle_highlights
